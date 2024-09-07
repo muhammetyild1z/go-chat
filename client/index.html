@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+    <title>Go Chat Uygulaması</title>  
+      <link href="https://maxcdn.bootstrapcdn.com/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        #chat {
+            width: 100%;
+            max-width: 600px;
+            height: 300px;
+            overflow-y: scroll;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-bottom: 10px;
+            display: flex;
+            flex-direction: column;
+            background-color: #f9f9f9;
+        }
+
+        .message {
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: flex-start;
+        }
+
+        .message.sent {
+            justify-content: flex-end;
+        }
+
+        .message div {
+            max-width: 60%;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .message.sent div {
+            background-color: #dcf8c6;
+            text-align: right;
+            word-wrap: break-word;
+        }
+
+        .message.received div {
+            background-color: #fff;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+
+        #input {
+            width: 100%;
+            max-width: 600px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        #username, #message {
+            width: calc(100% - 120px);
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+
+        button {
+            width: 100px;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="chat"></div>
+    <div id="input">
+        <input type="text" id="username" placeholder="Kullanıcı Adı">
+        <input type="text" id="message" placeholder="Mesajınızı Girin">
+        <button onclick="sendMessage()">Gönder</button>
+    </div>
+    
+    <script>
+        // WebSocket create conn
+        const ws = new WebSocket('ws://localhost:8080/ws');
+
+        // server message listen
+        ws.onmessage = function (event) {
+    const chat = document.getElementById('chat');
+    const msg = JSON.parse(event.data);
+    const username = document.getElementById('username').value;
+
+    // check
+    if (msg.username !== username) {
+       
+        const messageDiv = document.createElement('div');
+        messageDiv.classList.add('message', 'received');
+        messageDiv.innerHTML = `<div><strong>${msg.username}:</strong> ${msg.message}</div>`;
+
+        // chat panel message add
+        chat.appendChild(messageDiv);
+
+        
+        chat.scrollTop = chat.scrollHeight;
+    }
+};
+
+
+        // Mesaj gönderme fonksiyonu
+        function sendMessage() {
+    const username = document.getElementById('username').value;
+    const message = document.getElementById('message').value;
+
+    if (username && message) {
+        const msg = { username: username, message: message };
+
+        // request
+        ws.send(JSON.stringify(msg));
+
+        // is message add
+        const chat = document.getElementById('chat');
+        const messageDiv = document.createElement('div');
+        messageDiv.classList.add('message', 'sent');
+        messageDiv.innerHTML = `<div><strong>Ben:</strong> ${message}</div>`;
+        chat.appendChild(messageDiv);
+
+        // messagebox clear
+        document.getElementById('message').value = '';
+
+       
+        chat.scrollTop = chat.scrollHeight;
+    } else {
+        alert('Kullanıcı adı ve mesaj girilmelidir!');
+    }
+}
+
+    </script>
+</body>
+
+</html>
