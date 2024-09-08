@@ -1,12 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-
     <meta charset="UTF-8">
-    <title>Go Chat Uygulaması</title>  
-      <link href="https://maxcdn.bootstrapcdn.com/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
-
+    <title>End-to-End Encrypted Chat</title>
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsencrypt/3.2.1/jsencrypt.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -15,7 +14,6 @@
             align-items: center;
             padding: 20px;
         }
-
         #chat {
             width: 100%;
             max-width: 600px;
@@ -28,17 +26,14 @@
             flex-direction: column;
             background-color: #f9f9f9;
         }
-
         .message {
             margin-bottom: 10px;
             display: flex;
             justify-content: flex-start;
         }
-
         .message.sent {
             justify-content: flex-end;
         }
-
         .message div {
             max-width: 60%;
             padding: 10px;
@@ -46,34 +41,30 @@
             font-size: 14px;
             line-height: 1.5;
         }
-
         .message.sent div {
             background-color: #dcf8c6;
             text-align: right;
             word-wrap: break-word;
         }
-
         .message.received div {
             background-color: #fff;
             border: 1px solid #ddd;
             text-align: left;
         }
-
         #input {
             width: 100%;
             max-width: 600px;
             display: flex;
             gap: 10px;
             align-items: center;
+            margin-bottom: 10px;
         }
-
-        #username, #message {
-            width: calc(100% - 120px);
+        #username, #message, #recipient {
+            width: calc(33% - 10px);
             padding: 10px;
             border-radius: 5px;
             border: 1px solid #ddd;
         }
-
         button {
             width: 100px;
             padding: 10px;
@@ -83,76 +74,136 @@
             color: white;
             cursor: pointer;
         }
-
         button:hover {
             background-color: #0056b3;
         }
+        #keyInfo {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background-color: #f8f9fa;
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            max-width: 300px;
+            word-wrap: break-word;
+            overflow-y: scroll;
+        }
     </style>
 </head>
-
 <body>
+    <div id="keyInfo " >
+        <h4>Your Keys</h4>
+        <p><strong>Public Key:</strong> <span id="publicKeyDisplay"></span></p>
+        <p><strong>Private Key:</strong> <span id="privateKeyDisplay"></span></p>
+        <strong> Id:</strong> <span id="idDisplay"></span> 
+    </div>
     <div id="chat"></div>
     <div id="input">
         <input type="text" id="username" placeholder="Kullanıcı Adı">
+        <input type="text" id="recipient" placeholder="Alıcı ID">
         <input type="text" id="message" placeholder="Mesajınızı Girin">
         <button onclick="sendMessage()">Gönder</button>
     </div>
     
     <script>
-        // WebSocket create conn
         const ws = new WebSocket('ws://localhost:8080/ws');
+        const crypt = new JSEncrypt({default_key_size: 2048});
+        const publicKey = crypt.getPublicKey();
+        const privateKey = crypt.getPrivateKey();
+        const id = Math.random().toString(36).substr(2, 9);   
+        console.log(id)
+        const clients = {};
 
-        // server message listen
-        ws.onmessage = function (event) {
-    const chat = document.getElementById('chat');
-    const msg = JSON.parse(event.data);
-    const username = document.getElementById('username').value;
+        // Anahtar bilgilerini göster
+        document.getElementById('publicKeyDisplay').textContent = publicKey;
+        document.getElementById('privateKeyDisplay').textContent = privateKey;
+        document.getElementById('idDisplay').textContent = id;
+        ws.onopen = function() {
+            const msg = {
+                type: 'new_client',
+                username: 'System',
+                publicKey: publicKey
+            };
+            ws.send(JSON.stringify(msg));
+        };
 
-    // check
-    if (msg.username !== username) {
-       
-        const messageDiv = document.createElement('div');
-        messageDiv.classList.add('message', 'received');
-        messageDiv.innerHTML = `<div><strong>${msg.username}:</strong> ${msg.message}</div>`;
+        ws.onmessage = function(event) {
+            const chat = document.getElementById('chat');
+            const msg = JSON.parse(event.data);
+            const username = document.getElementById('username').value;
 
-        // chat panel message add
-        chat.appendChild(messageDiv);
+            if (msg.type === 'new_client') {
+                clients[msg.username] = msg.publicKey;
+                const messageDiv = document.createElement('div');
+                messageDiv.classList.add('message', 'received');
+                messageDiv.innerHTML = `<div><strong>System:</strong> New client connected: ${msg.username}</div>`;
+                chat.appendChild(messageDiv);
+            } else if (msg.type === 'chat') {
+                if (msg.recipientID === ws.url) {
+                    const decryptedMsg = decryptMessage(msg.message);
+                    const messageDiv = document.createElement('div');
+                    messageDiv.classList.add('message', 'received');
+                    messageDiv.innerHTML = `<div><strong>${msg.username}:</strong> ${decryptedMsg}</div>`;
+                    chat.appendChild(messageDiv);
+                }
+            }
 
-        
-        chat.scrollTop = chat.scrollHeight;
-    }
-};
+            chat.scrollTop = chat.scrollHeight;
+        };
 
-
-        // Mesaj gönderme fonksiyonu
         function sendMessage() {
-    const username = document.getElementById('username').value;
-    const message = document.getElementById('message').value;
+            const username = document.getElementById('username').value;
+            const recipient = document.getElementById('recipient').value;
+            const message = document.getElementById('message').value;
 
-    if (username && message) {
-        const msg = { username: username, message: message };
+            if (username && message && recipient) {
+                const encryptedMsg = encryptMessage(message, clients[recipient]);
+                const msg = {
+                    type: 'chat',
+                    username: username,
+                    message: encryptedMsg,
+                    recipientID: recipient
+                };
+ 
+                ws.send(JSON.stringify(msg));
 
-        // request
-        ws.send(JSON.stringify(msg));
+                const chat = document.getElementById('chat');
+                const messageDiv = document.createElement('div');
+                messageDiv.classList.add('message', 'sent');
+                messageDiv.innerHTML = `<div><strong>Ben (${recipient}):</strong> ${message}</div>`;
+                chat.appendChild(messageDiv);
 
-        // is message add
-        const chat = document.getElementById('chat');
-        const messageDiv = document.createElement('div');
-        messageDiv.classList.add('message', 'sent');
-        messageDiv.innerHTML = `<div><strong>Ben:</strong> ${message}</div>`;
-        chat.appendChild(messageDiv);
+                document.getElementById('message').value = '';
+                chat.scrollTop = chat.scrollHeight;
+            } else {
+                alert('Kullanıcı adı, alıcı ID ve mesaj girilmelidir!');
+            }
+        }
 
-        // messagebox clear
-        document.getElementById('message').value = '';
+        function encryptMessage(message, recipientPublicKey) {
+            const aesKey = CryptoJS.lib.WordArray.random(32);
+            const iv = CryptoJS.lib.WordArray.random(16);
 
-       
-        chat.scrollTop = chat.scrollHeight;
-    } else {
-        alert('Kullanıcı adı ve mesaj girilmelidir!');
-    }
-}
+            const encrypted = CryptoJS.AES.encrypt(message, aesKey, { iv: iv });
+            const encryptedAesKey = crypt.encrypt(aesKey.toString());
 
+            return JSON.stringify({
+                cipher: encrypted.toString(),
+                iv: CryptoJS.enc.Base64.stringify(iv),
+                encryptedKey: encryptedAesKey
+            });
+        }
+
+        function decryptMessage(encryptedMessage) {
+            const parsedMsg = JSON.parse(encryptedMessage);
+            const decryptedKey = crypt.decrypt(parsedMsg.encryptedKey);
+            const iv = CryptoJS.enc.Base64.parse(parsedMsg.iv);
+
+            const decrypted = CryptoJS.AES.decrypt(parsedMsg.cipher, CryptoJS.enc.Utf8.parse(decryptedKey), { iv: iv });
+            return decrypted.toString(CryptoJS.enc.Utf8);
+        }
     </script>
 </body>
-
 </html>
